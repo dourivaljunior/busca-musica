@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Buscador de Cifras Inteligente</title>
-    <!-- Importa a biblioteca PDF.js para ler o PDF via JavaScript -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <title>Índice Inteligente de Cifras</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -15,7 +13,7 @@
             color: #333;
         }
         .container {
-            max-width: 1000px;
+            max-width: 700px;
             margin: 0 auto;
         }
         .search-section {
@@ -35,59 +33,46 @@
             outline: none;
         }
         .search-box:focus {
-            border-color: #007bff;
-        }
-        .status {
-            margin-top: 10px;
-            font-size: 14px;
-            color: #666;
-        }
-        .layout-artistas {
-            display: grid;
-            grid-template-columns: 300px 1fr;
-            gap: 20px;
+            border-color: #28a745;
         }
         .results-list {
             background: white;
             padding: 15px;
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-            max-height: 600px;
-            overflow-y: auto;
         }
         .result-item {
-            padding: 12px;
+            padding: 15px;
             border-bottom: 1px solid #eee;
-            cursor: pointer;
             border-radius: 4px;
-            transition: background 0.2s;
-        }
-        .result-item:hover {
-            background-color: #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
         .result-title {
             font-weight: bold;
-            color: #007bff;
-            margin: 0 0 5px 0;
-        }
-        .result-meta {
-            font-size: 12px;
-            color: #666;
+            color: #333;
             margin: 0;
+            font-size: 18px;
         }
-        .viewer-section {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        .result-artist {
+            margin: 5px 0 0 0;
+            color: #666;
+            font-size: 14px;
+        }
+        .page-badge {
+            background-color: #28a745;
+            color: white;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .tip {
+            font-size: 12px;
+            color: #777;
+            margin-top: 10px;
             text-align: center;
-            min-height: 400px;
-        }
-        #pdf-canvas {
-            max-width: 100%;
-            border: 1px solid #ccc;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            background: #fff;
         }
     </style>
 </head>
@@ -95,128 +80,68 @@
 
 <div class="container">
     <div class="search-section">
-        <input type="text" id="search-input" class="search-box" placeholder="Digite o nome da música ou artista e aperte Enter...">
-        <div id="status-message" class="status">Carregando arquivo PDF... Aguarde.</div>
+        <h2 style="margin-top: 0; color: #28a745;">🔍 Buscador de Páginas (PDF 16GB)</h2>
+        <input type="text" id="search-input" class="search-box" placeholder="Digite o nome da música ou do artista..." oninput="filtrarIndice()">
+        <p class="tip">Digite pelo menos 2 letras para filtrar o catálogo de páginas.</p>
     </div>
 
-    <div class="layout-artistas">
-        <div class="results-list" id="results-container">
-            <p style="color: #999; text-align: center;">Os resultados da busca aparecerão aqui.</p>
-        </div>
-
-        <div class="viewer-section">
-            <h3 id="playing-title" style="margin-top:0; color:#555;">Nenhuma música selecionada</h3>
-            <canvas id="pdf-canvas"></canvas>
-        </div>
+    <div class="results-list" id="results-container">
+        <p style="color: #999; text-align: center; margin: 0;">Resultados aparecerão aqui à medida que você digitar.</p>
     </div>
 </div>
 
 <script>
     /*******************************************************************
-     * ⚠️ CONFIGURAÇÃO DO SEU ARQUIVO PDF (DESTAQUE)                   *
-     * Altere o texto abaixo para o nome exato do seu arquivo de PDF.  *
-     * O arquivo DEVE estar na mesma pasta/diretório deste index.html. *
+     * 🔎 CADASTRO DO SEU REPERTÓRIO (ALIMENTAÇÃO MANUAL)             *
+     * Como o PDF é uma imagem gigante, você adiciona as músicas aqui. *
+     * Adicione quantas quiser seguindo o padrão abaixo:               *
      *******************************************************************/
-    
-    const urlPDF = 'cifras3.pdf'; 
-    
+    const biblioteca = [
+        { titulo: "Gita", artista: "Raul Seixas", pagina: 12 },
+        { titulo: "Metamorfose Ambulante", artista: "Raul Seixas", pagina: 13 },
+        { titulo: "Como Nossos Pais", artista: "Elis Regina", pagina: 45 },
+        { titulo: "O Trem Azul", artista: "Elis Regina", pagina: 46 },
+        { titulo: "Ainda Ontem Chorei de Saudade", artista: "João Mineiro & Marciano", pagina: 120 },
+        // Adicione as próximas linhas aqui
+    ];
     /*******************************************************************/
 
-    // Inicializa a biblioteca do PDF.js
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
-
-    let pdfDoc = null;
-    const statusMsg = document.getElementById('status-message');
-    const searchInput = document.getElementById('search-input');
     const resultsContainer = document.getElementById('results-container');
 
-    // Carrega o PDF assim que a página abre
-    pdfjsLib.getDocument(urlPDF).promise.then(pdf => {
-        pdfDoc = pdf;
-        statusMsg.innerText = `PDF carregado com sucesso! Total de páginas: ${pdf.numPages}. Pronto para buscar.`;
-    }).catch(error => {
-        statusMsg.innerText = "Erro ao carregar o arquivo PDF. Verifique se o nome está correto e se ele está na mesma pasta deste HTML.";
-        console.error(error);
-    });
-
-    // Escuta o evento de busca quando o usuário aperta "Enter"
-    searchInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            realizarBusca();
-        }
-    });
-
-    // Função que varre as páginas do PDF procurando o termo digitado
-    async function realizarBusca() {
-        const termoBusca = searchInput.value.toLowerCase().trim();
-        if (!termoBusca || !pdfDoc) return;
-
-        statusMsg.innerText = "Buscando correspondências nas 884 páginas...";
-        resultsContainer.innerHTML = '<p style="text-align:center;">Pesquisando...</p>';
-        
-        let resultadosEncontrados = 0;
-        const fragmento = document.createDocumentFragment();
-
-        // Varre cada página do PDF
-        for (let i = 1; i <= pdfDoc.numPages; i++) {
-            const pagina = await pdfDoc.getPage(i);
-            const conteudoTexto = await pagina.getTextContent();
-            
-            // Junta todo o texto da página atual
-            const textoPagina = conteudoTexto.items.map(item => item.str).join(' ').toLowerCase();
-
-            // Verifica se o termo pesquisado está presente na página
-            if (textoPagina.includes(termoBusca)) {
-                resultadosEncontrados++;
-
-                // Extrai as primeiras palavras da página para tentar exibir como título temporário
-                let previsualizacao = conteudoTexto.items.slice(0, 3).map(item => item.str).join(' ');
-                if(previsualizacao.trim() === "") previsualizacao = "Cifra ou Conteúdo Musical";
-
-                // Cria o item clicável na lista de resultados
-                const divItem = document.createElement('div');
-                divItem.className = 'result-item';
-                divItem.innerHTML = `
-                    <p class="result-title">${previsualizacao}</p>
-                    <p class="result-meta">Encontrado na Página: ${i}</p>
-                `;
-                
-                // Configura o clique para abrir aquela página específica na tela
-                divItem.onclick = () => renderizarPagina(i, previsualizacao);
-                fragmento.appendChild(divItem);
-            }
-        }
-
+    function filtrarIndice() {
+        const query = document.getElementById('search-input').value.toLowerCase().trim();
         resultsContainer.innerHTML = '';
-        if (resultadosEncontrados === 0) {
-            resultsContainer.innerHTML = '<p style="color:#cc0000; text-align:center;">Nenhum resultado encontrado.</p>';
-            statusMsg.innerText = "Busca concluída. Nenhuma música ou artista encontrado.";
-        } else {
-            resultsContainer.appendChild(fragmento);
-            statusMsg.innerText = `Busca concluída. Foram encontradas ${resultadosEncontrados} páginas correspondentes.`;
+
+        if (query.length < 2) {
+            resultsContainer.innerHTML = '<p style="color: #999; text-align: center; margin: 0;">Digite pelo menos 2 letras para pesquisar.</p>';
+            return;
         }
-    }
 
-    // Função que renderiza graficamente a página escolhida do PDF na tela
-    function renderizarPagina(numPagina, titulo) {
-        document.getElementById('playing-title').innerText = `${titulo} (Pág. ${numPagina})`;
-        
-        pdfDoc.getPage(numPagina).then(pagina => {
-            const canvas = document.getElementById('pdf-canvas');
-            const ctx = canvas.getContext('2d');
+        const filtrados = biblioteca.filter(m => 
+            m.titulo.toLowerCase().includes(query) || 
+            m.artista.toLowerCase().includes(query)
+        );
 
-            // Define a resolução da renderização (1.5 é um bom tamanho de tela)
-            const viewport = pagina.getViewport({ scale: 1.5 });
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
+        if (filtrados.length === 0) {
+            resultsContainer.innerHTML = '<p style="color: #cc0000; text-align: center; margin: 0; font-weight: bold;">Nenhum registro encontrado no índice.</p>';
+            return;
+        }
 
-            const renderContext = {
-                canvasContext: ctx,
-                viewport: viewport
-            };
-            
-            pagina.render(renderContext);
+        const fragmento = document.createDocumentFragment();
+        filtrados.forEach(m => {
+            const div = document.createElement('div');
+            div.className = 'result-item';
+            div.innerHTML = `
+                <div>
+                    <p class="result-title">${m.titulo}</p>
+                    <p class="result-artist">${m.artista}</p>
+                </div>
+                <div class="page-badge">Pág. ${m.pagina}</div>
+            `;
+            fragmento.appendChild(div);
         });
+
+        resultsContainer.appendChild(fragmento);
     }
 </script>
 

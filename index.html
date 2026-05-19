@@ -3,7 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Índice Inteligente de Cifras</title>
+    <title>Buscador de Cifras Inteligente</title>
+    <!-- Importa a biblioteca PDF.js para ler o PDF via JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -13,7 +15,7 @@
             color: #333;
         }
         .container {
-            max-width: 700px;
+            max-width: 1200px;
             margin: 0 auto;
         }
         .search-section {
@@ -33,46 +35,65 @@
             outline: none;
         }
         .search-box:focus {
-            border-color: #28a745;
+            border-color: #007bff;
+        }
+        .status {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+            font-weight: bold;
+        }
+        .layout-artistas {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+        }
+        @media(max-width: 900px) {
+            .layout-artistas { grid-template-columns: 1fr; }
         }
         .results-list {
             background: white;
             padding: 15px;
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            max-height: 700px;
+            overflow-y: auto;
         }
         .result-item {
-            padding: 15px;
+            padding: 12px;
             border-bottom: 1px solid #eee;
+            cursor: pointer;
             border-radius: 4px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            transition: background 0.2s;
+        }
+        .result-item:hover {
+            background-color: #e9ecef;
         }
         .result-title {
             font-weight: bold;
-            color: #333;
-            margin: 0;
-            font-size: 18px;
+            color: #007bff;
+            margin: 0 0 5px 0;
         }
-        .result-artist {
-            margin: 5px 0 0 0;
-            color: #666;
-            font-size: 14px;
-        }
-        .page-badge {
-            background-color: #28a745;
-            color: white;
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-weight: bold;
-            font-size: 14px;
-        }
-        .tip {
+        .result-meta {
             font-size: 12px;
-            color: #777;
-            margin-top: 10px;
-            text-align: center;
+            color: #666;
+            margin: 0;
+        }
+        .viewer-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            height: 700px;
+        }
+        #pdf-frame {
+            width: 100%;
+            height: 100%;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: #fff;
         }
     </style>
 </head>
@@ -80,68 +101,116 @@
 
 <div class="container">
     <div class="search-section">
-        <h2 style="margin-top: 0; color: #28a745;">🔍 Buscador de Páginas (PDF 16GB)</h2>
-        <input type="text" id="search-input" class="search-box" placeholder="Digite o nome da música ou do artista..." oninput="filtrarIndice()">
-        <p class="tip">Digite pelo menos 2 letras para filtrar o catálogo de páginas.</p>
+        <input type="text" id="search-input" class="search-box" placeholder="Aguarde, carregando indexador de texto do PDF..." disabled>
+        <div id="status-message" class="status" style="color: #d97706;">Analisando estrutura do documento...</div>
     </div>
 
-    <div class="results-list" id="results-container">
-        <p style="color: #999; text-align: center; margin: 0;">Resultados aparecerão aqui à medida que você digitar.</p>
+    <div class="layout-artistas">
+        <div class="results-list" id="results-container">
+            <p style="color: #999; text-align: center;">Os resultados da busca aparecerão aqui.</p>
+        </div>
+
+        <div class="viewer-section">
+            <h3 id="playing-title" style="margin-top:0; color:#555;">Nenhuma música selecionada</h3>
+            <iframe id="pdf-frame" src="about:blank"></iframe>
+        </div>
     </div>
 </div>
 
 <script>
     /*******************************************************************
-     * 🔎 CADASTRO DO SEU REPERTÓRIO (ALIMENTAÇÃO MANUAL)             *
-     * Como o PDF é uma imagem gigante, você adiciona as músicas aqui. *
-     * Adicione quantas quiser seguindo o padrão abaixo:               *
+     * NOME DO SEU ARQUIVO PDF                                         *
      *******************************************************************/
-    const biblioteca = [
-        { titulo: "Gita", artista: "Raul Seixas", pagina: 12 },
-        { titulo: "Metamorfose Ambulante", artista: "Raul Seixas", pagina: 13 },
-        { titulo: "Como Nossos Pais", artista: "Elis Regina", pagina: 45 },
-        { titulo: "O Trem Azul", artista: "Elis Regina", pagina: 46 },
-        { titulo: "Ainda Ontem Chorei de Saudade", artista: "João Mineiro & Marciano", pagina: 120 },
-        // Adicione as próximas linhas aqui
-    ];
+    const urlPDF = 'cifras3.pdf'; 
     /*******************************************************************/
 
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+    let pdfDoc = null;
+    const statusMsg = document.getElementById('status-message');
+    const searchInput = document.getElementById('search-input');
     const resultsContainer = document.getElementById('results-container');
+    const pdfFrame = document.getElementById('pdf-frame');
 
-    function filtrarIndice() {
-        const query = document.getElementById('search-input').value.toLowerCase().trim();
-        resultsContainer.innerHTML = '';
+    // Carrega o PDF em segundo plano apenas para fazer a indexação das buscas
+    pdfjsLib.getDocument(urlPDF).promise.then(pdf => {
+        pdfDoc = pdf;
+        statusMsg.style.color = "#16a34a";
+        statusMsg.innerText = `PDF mapeado! Total de páginas: ${pdf.numPages}. Pronto para buscar.`;
+        searchInput.disabled = false;
+        searchInput.placeholder = "Digite o nome da música ou artista e aperte Enter...";
+        searchInput.focus();
+    }).catch(error => {
+        statusMsg.style.color = "#cc0000";
+        statusMsg.innerText = "Erro ao carregar o arquivo PDF. Verifique se o nome está exato e se está no mesmo diretório.";
+        console.error(error);
+    });
 
-        if (query.length < 2) {
-            resultsContainer.innerHTML = '<p style="color: #999; text-align: center; margin: 0;">Digite pelo menos 2 letras para pesquisar.</p>';
-            return;
+    searchInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            realizarBusca();
         }
+    });
 
-        const filtrados = biblioteca.filter(m => 
-            m.titulo.toLowerCase().includes(query) || 
-            m.artista.toLowerCase().includes(query)
-        );
+    async function realizarBusca() {
+        const termoBusca = searchInput.value.toLowerCase().trim();
+        if (!termoBusca || !pdfDoc) return;
 
-        if (filtrados.length === 0) {
-            resultsContainer.innerHTML = '<p style="color: #cc0000; text-align: center; margin: 0; font-weight: bold;">Nenhum registro encontrado no índice.</p>';
-            return;
-        }
-
+        statusMsg.style.color = "#0284c7";
+        statusMsg.innerText = "Pesquisando ocorrências nas páginas...";
+        resultsContainer.innerHTML = '<p style="text-align:center; color:#666;">Buscando...</p>';
+        
+        let resultadosEncontrados = 0;
         const fragmento = document.createDocumentFragment();
-        filtrados.forEach(m => {
-            const div = document.createElement('div');
-            div.className = 'result-item';
-            div.innerHTML = `
-                <div>
-                    <p class="result-title">${m.titulo}</p>
-                    <p class="result-artist">${m.artista}</p>
-                </div>
-                <div class="page-badge">Pág. ${m.pagina}</div>
-            `;
-            fragmento.appendChild(div);
-        });
 
-        resultsContainer.appendChild(fragmento);
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+            try {
+                const pagina = await pdfDoc.getPage(i);
+                const conteudoTexto = await pagina.getTextContent();
+                const textoPagina = conteudoTexto.items.map(item => item.str).join(' ').toLowerCase();
+
+                if (textoPagina.includes(termoBusca)) {
+                    resultadosEncontrados++;
+
+                    let previsualizacao = conteudoTexto.items.slice(0, 4).map(item => item.str).join(' ').trim();
+                    if(!previsualizacao) previsualizacao = `Música - Página ${i}`;
+
+                    const divItem = document.createElement('div');
+                    divItem.className = 'result-item';
+                    divItem.innerHTML = `
+                        <p class="result-title">${previsualizacao}</p>
+                        <p class="result-meta">Ir para a Página: ${i}</p>
+                    `;
+                    
+                    // Envia o comando exato de mudança de página para o visualizador do navegador
+                    divItem.onclick = () => carregarPaginaNoViewer(i, previsualizacao);
+                    fragmento.appendChild(divItem);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        resultsContainer.innerHTML = '';
+        if (resultadosEncontrados === 0) {
+            resultsContainer.innerHTML = '<p style="color:#cc0000; text-align:center; font-weight:bold;">Nenhum resultado encontrado.</p>';
+            statusMsg.style.color = "#dc2626";
+            statusMsg.innerText = "Nenhuma combinação encontrada.";
+        } else {
+            resultsContainer.appendChild(fragmento);
+            statusMsg.style.color = "#16a34a";
+            statusMsg.innerText = `Busca concluída. Encontradas ${resultadosEncontrados} páginas.`;
+        }
+    }
+
+    // Altera o SRC do iframe aplicando a hash nativa do visualizador do navegador (#page=X)
+    function carregarPaginaNoViewer(numPagina, titulo) {
+        document.getElementById('playing-title').innerText = `${titulo} (Pág. ${numPagina})`;
+        statusMsg.style.color = "#d97706";
+        statusMsg.innerText = `Abrindo folha de cifra número ${numPagina}...`;
+        
+        // Aplica o parâmetro padrão web para abrir o PDF diretamente na página certa
+        pdfFrame.src = `${urlPDF}#page=${numPagina}`;
     }
 </script>
 

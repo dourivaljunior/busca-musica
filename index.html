@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Buscador de Cifras Inteligente</title>
-    <!-- Importa a biblioteca PDF.js para ler o PDF via JavaScript -->
+    <title>Buscador de Cifras Multi-PDF</title>
+    <!-- Importa a biblioteca PDF.js para mapear os arquivos -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <style>
         body {
@@ -45,7 +45,7 @@
         }
         .layout-artistas {
             display: grid;
-            grid-template-columns: 350px 1fr;
+            grid-template-columns: 380px 1fr;
             gap: 20px;
         }
         @media(max-width: 900px) {
@@ -65,6 +65,7 @@
             cursor: pointer;
             border-radius: 4px;
             transition: background 0.2s;
+            margin-bottom: 5px;
         }
         .result-item:hover {
             background-color: #e9ecef;
@@ -76,8 +77,9 @@
         }
         .result-meta {
             font-size: 12px;
-            color: #666;
+            color: #28a745;
             margin: 0;
+            font-weight: bold;
         }
         .viewer-section {
             background: white;
@@ -101,8 +103,8 @@
 
 <div class="container">
     <div class="search-section">
-        <input type="text" id="search-input" class="search-box" placeholder="Aguarde, carregando indexador de texto do PDF..." disabled>
-        <div id="status-message" class="status" style="color: #d97706;">Analisando estrutura do documento...</div>
+        <input type="text" id="search-input" class="search-box" placeholder="Aguarde, inicializando indexador de volumes..." disabled>
+        <div id="status-message" class="status" style="color: #d97706;">Conectando à biblioteca de cifras...</div>
     </div>
 
     <div class="layout-artistas">
@@ -111,106 +113,109 @@
         </div>
 
         <div class="viewer-section">
-            <h3 id="playing-title" style="margin-top:0; color:#555;">Nenhuma música selecionada</h3>
+            <h3 id="playing-title" style="margin-top:0; color:#555;">Nenhuma cifra selecionada</h3>
             <iframe id="pdf-frame" src="about:blank"></iframe>
         </div>
     </div>
 </div>
 
 <script>
-    /*******************************************************************
-     * NOME DO SEU ARQUIVO PDF                                         *
-     *******************************************************************/
-    const urlPDF = 'cifras3.pdf'; 
-    /*******************************************************************/
-
+    // Configura o worker da biblioteca externa
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
 
-    let pdfDoc = null;
+    // Lista com os 10 arquivos individuais pequenos
+    const arquivosPDF = [
+        'cifras1.pdf', 'cifras2.pdf', 'cifras3.pdf', 'cifras4.pdf', 'cifras5.pdf',
+        'cifras6.pdf', 'cifras7.pdf', 'cifras8.pdf', 'cifras9.pdf', 'cifras10.pdf'
+    ];
+
     const statusMsg = document.getElementById('status-message');
     const searchInput = document.getElementById('search-input');
     const resultsContainer = document.getElementById('results-container');
     const pdfFrame = document.getElementById('pdf-frame');
 
-    // Carrega o PDF em segundo plano apenas para fazer a indexação das buscas
-    pdfjsLib.getDocument(urlPDF).promise.then(pdf => {
-        pdfDoc = pdf;
-        statusMsg.style.color = "#16a34a";
-        statusMsg.innerText = `PDF mapeado! Total de páginas: ${pdf.numPages}. Pronto para buscar.`;
-        searchInput.disabled = false;
-        searchInput.placeholder = "Digite o nome da música ou artista e aperte Enter...";
-        searchInput.focus();
-    }).catch(error => {
-        statusMsg.style.color = "#cc0000";
-        statusMsg.innerText = "Erro ao carregar o arquivo PDF. Verifique se o nome está exato e se está no mesmo diretório.";
-        console.error(error);
-    });
+    // Libera a interface imediatamente, pois a varredura ocorrerá sob demanda
+    statusMsg.style.color = "#16a34a";
+    statusMsg.innerText = "Pronto! Digite a música e aperte Enter para varrer os 10 arquivos.";
+    searchInput.disabled = false;
+    searchInput.placeholder = "Digite a música ou artista e aperte Enter...";
+    searchInput.focus();
 
     searchInput.addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
-            realizarBusca();
+            realizarBuscaGlobal();
         }
     });
 
-    async function realizarBusca() {
+    async function realizarBuscaGlobal() {
         const termoBusca = searchInput.value.toLowerCase().trim();
-        if (!termoBusca || !pdfDoc) return;
+        if (!termoBusca) return;
 
         statusMsg.style.color = "#0284c7";
-        statusMsg.innerText = "Pesquisando ocorrências nas páginas...";
-        resultsContainer.innerHTML = '<p style="text-align:center; color:#666;">Buscando...</p>';
+        statusMsg.innerText = "Varrendo os 10 volumes em lote... Aguarde.";
+        resultsContainer.innerHTML = '<p style="text-align:center; color:#666;">Pesquisando nas coleções...</p>';
         
-        let resultadosEncontrados = 0;
+        let totalResultados = 0;
         const fragmento = document.createDocumentFragment();
 
-        for (let i = 1; i <= pdfDoc.numPages; i++) {
+        // Percorre cada um dos 10 arquivos cadastrados
+        for (const nomeArquivo of arquivosPDF) {
             try {
-                const pagina = await pdfDoc.getPage(i);
-                const conteudoTexto = await pagina.getTextContent();
-                const textoPagina = conteudoTexto.items.map(item => item.str).join(' ').toLowerCase();
+                // Tenta abrir o documento atual em segundo plano
+                const pdf = await pdfjsLib.getDocument(nomeArquivo).promise;
+                
+                // Varre as páginas do documento atual
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const pagina = await pdf.getPage(i);
+                    const conteudoTexto = await pagina.getTextContent();
+                    const textoPagina = conteudoTexto.items.map(item => item.str).join(' ').toLowerCase();
 
-                if (textoPagina.includes(termoBusca)) {
-                    resultadosEncontrados++;
+                    // Se encontrar o termo na página, cria o card de resultado
+                    if (textoPagina.includes(termoBusca)) {
+                        totalResultados++;
 
-                    let previsualizacao = conteudoTexto.items.slice(0, 4).map(item => item.str).join(' ').trim();
-                    if(!previsualizacao) previsualizacao = `Música - Página ${i}`;
+                        // Extrai as primeiras palavras para servir de identificação
+                        let previsualizacao = conteudoTexto.items.slice(0, 5).map(item => item.str).join(' ').trim();
+                        if(!previsualizacao) previsualizacao = `Música na Pág. ${i}`;
 
-                    const divItem = document.createElement('div');
-                    divItem.className = 'result-item';
-                    divItem.innerHTML = `
-                        <p class="result-title">${previsualizacao}</p>
-                        <p class="result-meta">Ir para a Página: ${i}</p>
-                    `;
-                    
-                    // Envia o comando exato de mudança de página para o visualizador do navegador
-                    divItem.onclick = () => carregarPaginaNoViewer(i, previsualizacao);
-                    fragmento.appendChild(divItem);
+                        const divItem = document.createElement('div');
+                        divItem.className = 'result-item';
+                        divItem.innerHTML = `
+                            <p class="result-title">${previsualizacao}</p>
+                            <p class="result-meta">Origem: ${nomeArquivo} (Pág. ${i})</p>
+                        `;
+                        
+                        // Configura o gatilho para carregar o arquivo correto na página exata
+                        divItem.onclick = () => exibirCifra(nomeArquivo, i, previsualizacao);
+                        fragmento.appendChild(divItem);
+                    }
                 }
-            } catch (e) {
-                console.error(e);
+            } catch (erro) {
+                // Registra no console caso algum dos 10 arquivos ainda não tenha sido upado
+                console.warn(`Arquivo ${nomeArquivo} não localizado ou ainda não enviado.`);
             }
         }
 
         resultsContainer.innerHTML = '';
-        if (resultadosEncontrados === 0) {
-            resultsContainer.innerHTML = '<p style="color:#cc0000; text-align:center; font-weight:bold;">Nenhum resultado encontrado.</p>';
+        if (totalResultados === 0) {
+            resultsContainer.innerHTML = '<p style="color:#cc0000; text-align:center; font-weight:bold;">Nenhum resultado encontrado nos arquivos.</p>';
             statusMsg.style.color = "#dc2626";
-            statusMsg.innerText = "Nenhuma combinação encontrada.";
+            statusMsg.innerText = "Nenhuma correspondência localizada.";
         } else {
             resultsContainer.appendChild(fragmento);
             statusMsg.style.color = "#16a34a";
-            statusMsg.innerText = `Busca concluída. Encontradas ${resultadosEncontrados} páginas.`;
+            statusMsg.innerText = `Busca finalizada! Encontradas ${totalResultados} correspondências para escolha.`;
         }
     }
 
-    // Altera o SRC do iframe aplicando a hash nativa do visualizador do navegador (#page=X)
-    function carregarPaginaNoViewer(numPagina, titulo) {
-        document.getElementById('playing-title').innerText = `${titulo} (Pág. ${numPagina})`;
+    // Carrega o PDF e rola dinamicamente até a página que contém a cifra
+    function exibirCifra(arquivoPdf, numPagina, titulo) {
+        document.getElementById('playing-title').innerText = `${titulo}`;
         statusMsg.style.color = "#d97706";
-        statusMsg.innerText = `Abrindo folha de cifra número ${numPagina}...`;
+        statusMsg.innerText = `Renderizando folha do arquivo ${arquivoPdf}, página ${numPagina}...`;
         
-        // Aplica o parâmetro padrão web para abrir o PDF diretamente na página certa
-        pdfFrame.src = `${urlPDF}#page=${numPagina}`;
+        // Direciona o iframe para o arquivo correto aplicando o parâmetro de rolagem nativa
+        pdfFrame.src = `${arquivoPdf}#page=${numPagina}`;
     }
 </script>
 
